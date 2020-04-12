@@ -20,7 +20,7 @@ class Block():
         id = (db + str(pickle.dumps(self.data)) + self.prev_hash + str(self.nonce)).encode('utf-8')
         return hashlib.sha256(id).hexdigest()
     
-    def mine(self, diff):
+    def mineBlock(self, diff):
         temp_hash = self.get_hash()
         target = '0'*diff
         while not temp_hash.startswith(target):
@@ -29,7 +29,7 @@ class Block():
         self.hash = temp_hash
         return self.hash
     
-    def is_mined(self, diff):
+    def isBlockMined(self, diff):
         target = '0'*diff
         return self.hash.startswith(target)
 
@@ -49,16 +49,32 @@ class Chain():
         self.size += 1
     
 
-    def verify_chain(self):
+    def verifyTransaction(self):
       if(blockchain.size == 0):
         return True
       else:
-        if not blockchain.blocks[blockchain.size-1].is_mined(self.difficulty):
+        if not blockchain.blocks[blockchain.size-1].isBlockMined(self.difficulty):
           return False
         if(blockchain.blocks[blockchain.size-1].get_hash() != blockchain.blocks[blockchain.size-1].hash):
           return False
         else:
           return True
+
+def createBlock(data, prevhash):
+  new_block = Block(data, prevhash)
+  return new_block
+
+def viewUser(vid):
+  votedflag = 0
+  pid = 0
+  for i in range(blockchain.size):
+    vote = blockchain.blocks[i].data
+    if(vote['voter_id'] == vid):
+      votedflag = 1
+      pid = vote['party_id']
+      return votedflag, pid
+  return votedflag, pid
+
 
 app = Flask(__name__)
 app.secret_key = "Cryptography"
@@ -69,7 +85,7 @@ def index():
 
 @app.route('/login',methods = ['POST','GET'])
 def login():
-   if not blockchain.verify_chain():
+   if not blockchain.verifyTransaction():
       return render_template("index.html",msg="Database Tampered")
    if request.method == 'POST':
       conn = sqlite3.connect('users.db')
@@ -103,7 +119,7 @@ def validate():
       time=str(time)
       query="update users set `voted`=1 where `vid`='"+vid+"'"
 
-      if not blockchain.verify_chain():
+      if not blockchain.verifyTransaction():
         return render_template("index.html",msg="Database Tampered")
 
       conn.execute(query)
@@ -116,8 +132,8 @@ def validate():
       session.pop('vid', None)
       conn.close()
       print(json.dumps(vote))
-      blk = Block(vote, blockchain.prevhash)
-      blk.mine(blockchain.difficulty)
+      blk = createBlock(vote, blockchain.prevhash)
+      blk.mineBlock(blockchain.difficulty)
       blockchain.add_block(blk)
       with open('blockchain','wb') as f:
          pickle.dump(blockchain, f)
@@ -133,13 +149,32 @@ def insert_db():
     password = sha256_crypt.encrypt(str(request.form['password']))
     votedflag = 0
     query = "INSERT INTO users(`vid`,`pwd`,`voted`) VALUES('"+vid+"','"+password+"','"+str(votedflag)+"')"
-    print(query)
-    print(password)
     curs = conn.execute(query)
     conn.commit()
     conn.close()
   return render_template("insert_db.html")
 
+@app.route('/view_user',methods = ['POST', 'GET'])
+def view_user():
+  party = ""
+  voted = ""
+  if request.method == 'POST':
+    vid = request.form['VoterID']
+    votedflag, pid = viewUser(vid)
+    if(votedflag == 1):
+      voted = "Yes"
+      if(pid == '1'):
+        party = "Bhartiya Janata Party"
+      if(pid == '2'):
+        party = "Indian National Congress"
+      if(pid == '3'):
+        party = "Bahujan Samaj Party"
+      if(pid == '4'):
+        party = "Communist Party of India"
+    else:
+      voted = "No"
+
+  return render_template("view_user.html", partyname = party, votedflag = voted)
 
 
 if __name__ == '__main__':
